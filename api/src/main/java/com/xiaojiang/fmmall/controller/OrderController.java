@@ -9,7 +9,6 @@ import com.xiaojiang.fmmall.vo.ResultVo;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiImplicitParam;
 import io.swagger.annotations.ApiImplicitParams;
-import io.swagger.models.parameters.AbstractSerializableParameter;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
@@ -49,8 +48,8 @@ public class OrderController {
                 data.put("fee_type","CNY");  //支付币种
                 data.put("total_fee",/*order.getActualAmount()*100+""*/"1");  //支付金额
                 data.put("trade_type","NATIVE");  //支付类种
-//                data.put("notify_url","http://xing.free.idcfengye.com/pay/callback");  //设置支付完成时回调接口(内网穿透)
-                data.put("notify_url","http://47.113.202.84:8080/pay/callback");  //设置支付完成时回调接口(已在公网)
+                data.put("notify_url","http://xing.free.idcfengye.com/pay/callback");  //设置支付完成时回调接口(内网穿透)
+ //               data.put("notify_url","http://47.113.202.84:8080/pay/callback");  //设置支付完成时回调接口(已在公网)
                 //微信支付:申请支付链接
                 WXPay wxPay = new WXPay(new MyPayConfig());
                 //发送请求获取相应

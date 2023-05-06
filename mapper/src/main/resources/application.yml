@@ -1,11 +1,16 @@
 spring:
   datasource:
     druid:
-#      url: jdbc:mysql://localhost:3306/project_fmmall?characterEncoding=utf-8&serverTimezone=UTC  #本地
-      url: jdbc:mysql://47.113.202.84:3306/project_fmmall?characterEncoding=utf-8&serverTimezone=UTC   #远程
+      url: jdbc:mysql://localhost:3306/project_fmmall?characterEncoding=utf-8&serverTimezone=UTC  #本地
+#      url: jdbc:mysql://47.113.202.84:3306/project_fmmall?characterEncoding=utf-8&serverTimezone=UTC   #远程
       driver-class-name: com.mysql.cj.jdbc.Driver
       username: root
-      password: your_password
+      password: 123456  #your_password
+  redis:
+    host: 47.113.202.84
+    password: Smbo1IhcaF9YEJvZ
+    port: 6379
+    database: 0
 mybatis:
   mapper-locations: classpath:mappers/*.xml
   type-aliases-package: com.xiaojiang.fmmall.entity

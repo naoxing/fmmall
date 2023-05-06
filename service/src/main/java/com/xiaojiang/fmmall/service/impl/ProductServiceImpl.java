@@ -1,5 +1,8 @@
 package com.xiaojiang.fmmall.service.impl;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JavaType;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.xiaojiang.fmmall.entity.*;
 import com.xiaojiang.fmmall.mapper.ProductImgMapper;
 import com.xiaojiang.fmmall.mapper.ProductMapper;
@@ -10,11 +13,13 @@ import com.xiaojiang.fmmall.utils.PageHelper;
 import com.xiaojiang.fmmall.vo.ResStatus;
 import com.xiaojiang.fmmall.vo.ResultVo;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import tk.mybatis.mapper.entity.Example;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 
@@ -33,6 +38,10 @@ public class ProductServiceImpl implements ProductService {
     private ProductSkuMapper productSkuMapper;
     @Autowired
     private ProductParamsMapper productParamsMapper;
+    @Autowired
+    private StringRedisTemplate stringRedisTemplate;
+
+    private ObjectMapper objectMapper = new ObjectMapper();
 
     @Override
     public ResultVo listRecommendProducts() {
@@ -42,32 +51,59 @@ public class ProductServiceImpl implements ProductService {
     @Override
     @Transactional(propagation = Propagation.SUPPORTS)
     public ResultVo getProductBasicInfo(String productId) {
-        //1.商品基本信息
-        Example example = new Example(Product.class);
-        Example.Criteria criteria = example.createCriteria();
-        criteria.andEqualTo("productId", productId);
-        criteria.andEqualTo("productStatus", 1); //状态为1表示上架商品
-        List<Product> products = productMapper.selectByExample(example);
-        if (products.size() < 1) {
-            return new ResultVo(ResStatus.NO, "没有此商品信息", null);
-        }
-        //2.商品图片
-        example = new Example(ProductImg.class);
-        criteria = example.createCriteria();
-        criteria.andEqualTo("itemId", productId);
-        List<ProductImg> productImgs = productImgMapper.selectByExample(example);
-        //3.商品套餐
-        example = new Example(ProductSku.class);
-        criteria = example.createCriteria();
-        criteria.andEqualTo("productId", productId);
-        List<ProductSku> productSkus = productSkuMapper.selectByExample(example);
+        //查询redis商品信息
+        String productsInfo = (String)stringRedisTemplate.boundHashOps("products").get(productId);
+        //(1)如果redis中存在数据
+        try {
+            if(productsInfo!=null){
+                Product product = objectMapper.readValue(productsInfo, Product.class);
+                String imgStr = (String)stringRedisTemplate.boundHashOps("productImgs").get(productId);
+                String skuStr = (String)stringRedisTemplate.boundHashOps("productSkus").get(productId);
+                //创建集合转换的工厂类
+                JavaType imgType = objectMapper.getTypeFactory().constructParametricType(ArrayList.class, ProductImg.class);
+                JavaType skuType = objectMapper.getTypeFactory().constructParametricType(ArrayList.class, ProductSku.class);
 
-//        ProductVO productVO = toProductVo(products.get(0), productImgs, productSkus);
-        HashMap<String, Object> hashMap = new HashMap<>();
-        hashMap.put("product", products.get(0));
-        hashMap.put("productImgs", productImgs);
-        hashMap.put("productSkus", productSkus);
-        return new ResultVo(ResStatus.OK, "success", hashMap);
+                List<ProductImg> productImgs = objectMapper.readValue(imgStr, imgType);
+                List<ProductSku> productSkus = objectMapper.readValue(skuStr, skuType);
+                HashMap<String, Object> hashMap = new HashMap<>();
+                hashMap.put("product", product);
+                hashMap.put("productImgs", productImgs);
+                hashMap.put("productSkus", productSkus);
+                return new ResultVo(ResStatus.OK, "success", hashMap);
+            }else {
+                //(2)如果redis不存在就查找数据库并放入redis缓存
+                //1.商品基本信息
+                Example example = new Example(Product.class);
+                Example.Criteria criteria = example.createCriteria();
+                criteria.andEqualTo("productId", productId);
+                criteria.andEqualTo("productStatus", 1); //状态为1表示上架商品
+                List<Product> products = productMapper.selectByExample(example);
+                if (products.size() < 1) {
+                    return new ResultVo(ResStatus.NO, "没有此商品信息", null);
+                }
+                stringRedisTemplate.boundHashOps("products").put(productId,objectMapper.writeValueAsString(products.get(0)));
+                //2.商品图片
+                example = new Example(ProductImg.class);
+                criteria = example.createCriteria();
+                criteria.andEqualTo("itemId", productId);
+                List<ProductImg> productImgs = productImgMapper.selectByExample(example);
+                stringRedisTemplate.boundHashOps("productImgs").put(productId,objectMapper.writeValueAsString(productImgs));
+                //3.商品套餐
+                example = new Example(ProductSku.class);
+                criteria = example.createCriteria();
+                criteria.andEqualTo("productId", productId);
+                List<ProductSku> productSkus = productSkuMapper.selectByExample(example);
+                stringRedisTemplate.boundHashOps("productSkus").put(productId,objectMapper.writeValueAsString(productSkus));
+
+                HashMap<String, Object> hashMap = new HashMap<>();
+                hashMap.put("product", products.get(0));
+                hashMap.put("productImgs", productImgs);
+                hashMap.put("productSkus", productSkus);
+                return new ResultVo(ResStatus.OK, "success", hashMap);
+            }
+        } catch (JsonProcessingException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     @Override
