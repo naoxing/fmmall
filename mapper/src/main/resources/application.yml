@@ -1,0 +1,14 @@
+spring:
+  datasource:
+    druid:
+#      url: jdbc:mysql://localhost:3306/project_fmmall?characterEncoding=utf-8&serverTimezone=UTC  #本地
+      url: jdbc:mysql://47.113.202.84:3306/project_fmmall?characterEncoding=utf-8&serverTimezone=UTC   #远程
+      driver-class-name: com.mysql.cj.jdbc.Driver
+      username: root
+      password: your_password
+mybatis:
+  mapper-locations: classpath:mappers/*.xml
+  type-aliases-package: com.xiaojiang.fmmall.entity
+logging:
+  level:
+    io.swagger.models.parameters.AbstractSerializableParameter: error
