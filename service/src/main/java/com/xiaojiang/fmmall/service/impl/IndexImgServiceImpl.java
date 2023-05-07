@@ -33,24 +33,36 @@ public class IndexImgServiceImpl implements IndexImgService {
     @Override
     public ResultVo listIndexImgs() {
         List<IndexImg> indexImgs = null;
+        //如果高并发访问轮播图
         String imgsStr = stringRedisTemplate.boundValueOps("indexImgs").get();
         try {
             if(imgsStr!=null){
                 JavaType javaType = objectMapper.getTypeFactory().constructParametricType(ArrayList.class, IndexImg.class);
                 indexImgs = objectMapper.readValue(imgsStr, javaType);
-                return new ResultVo(ResStatus.OK,"success",indexImgs);
             }else {
-                indexImgs = indexImgMapper.listIndexImgs();
-                if(indexImgs.size()==0){
-                    return new ResultVo(ResStatus.NO,"fail",null);
+                synchronized (this) { //双重检测锁, 如果第一个线程没查到,就查数据库,然后放入redis,第二个线程过来就会再次判断有没有数据
+                    String str = stringRedisTemplate.boundValueOps("indexImgs").get();
+                    if(str!=null){
+                        JavaType javaType = objectMapper.getTypeFactory().constructParametricType(ArrayList.class, IndexImg.class);
+                        indexImgs = objectMapper.readValue(str, javaType);
+                    }else { //只有第一个请求为空,查数据库
+                        System.out.println("查询数据库--------");
+                        indexImgs = indexImgMapper.listIndexImgs();
+                        if(indexImgs!=null){ //如果数据库有数据
+                            stringRedisTemplate.boundValueOps("indexImgs").set(objectMapper.writeValueAsString(indexImgs));
+                            //设置过期时间为一天
+                            stringRedisTemplate.boundValueOps("indexImgs").expire(1, TimeUnit.DAYS);
+                        }else { //如果数据库没有数据,就写一个空数据存入redis,防止缓存穿透
+                            stringRedisTemplate.boundValueOps("indexImgs").set("[]");
+                            //设置过期时间为十秒钟
+                            stringRedisTemplate.boundValueOps("indexImgs").expire(10, TimeUnit.SECONDS);
+                        }
+                    }
                 }
-                stringRedisTemplate.boundValueOps("indexImgs").set(objectMapper.writeValueAsString(indexImgs));
-                //设置过期时间为一天
-                stringRedisTemplate.boundValueOps("indexImgs").expire(1, TimeUnit.DAYS);
-                return new ResultVo(ResStatus.OK,"success",indexImgs);
             }
         } catch (JsonProcessingException e) {
             throw new RuntimeException(e);
         }
+        return new ResultVo(ResStatus.OK,"success",indexImgs);
     }
 }
