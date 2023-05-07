@@ -1,15 +1,11 @@
 package com.xiaojiang.fmmall.controller;
 
-import com.google.common.annotations.VisibleForTesting;
-import com.xiaojiang.fmmall.mapper.UsersMapper;
 import com.xiaojiang.fmmall.service.CategoryService;
 import com.xiaojiang.fmmall.service.IndexImgService;
 import com.xiaojiang.fmmall.service.ProductService;
 import com.xiaojiang.fmmall.vo.ResultVo;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
-import org.apache.ibatis.session.SqlSession;
-import org.mybatis.spring.SqlSessionUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -33,7 +29,7 @@ public class IndexController {
     @Autowired
     private ProductService productService;
 
-    @GetMapping("indexImg")
+    @GetMapping("/indexImg")
     @ApiOperation("首页轮播图接口")
     public ResultVo listIndexImgs() {
         return indexImgService.listIndexImgs();

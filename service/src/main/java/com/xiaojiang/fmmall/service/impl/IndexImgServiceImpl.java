@@ -46,7 +46,6 @@ public class IndexImgServiceImpl implements IndexImgService {
                         JavaType javaType = objectMapper.getTypeFactory().constructParametricType(ArrayList.class, IndexImg.class);
                         indexImgs = objectMapper.readValue(str, javaType);
                     }else { //只有第一个请求为空,查数据库
-                        System.out.println("查询数据库--------");
                         indexImgs = indexImgMapper.listIndexImgs();
                         if(indexImgs!=null){ //如果数据库有数据
                             stringRedisTemplate.boundValueOps("indexImgs").set(objectMapper.writeValueAsString(indexImgs));

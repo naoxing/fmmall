@@ -1,6 +1,7 @@
 package com.xiaojiang.fmmall.config;
 
 import com.xiaojiang.fmmall.interceptor.CheckTokenInterceptor;
+import com.xiaojiang.fmmall.interceptor.SetTimeInterceptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -18,6 +19,8 @@ public class InterceptorConfig implements WebMvcConfigurer {
 
     @Autowired
     private CheckTokenInterceptor checkTokenInterceptor;
+    @Autowired
+    private SetTimeInterceptor setTimeInterceptor;
 
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
@@ -27,5 +30,7 @@ public class InterceptorConfig implements WebMvcConfigurer {
                 .addPathPatterns("/shopcart/**")
                 .addPathPatterns("/useraddr/**")
                 .addPathPatterns("/order/**");
+        registry.addInterceptor(setTimeInterceptor)
+                .addPathPatterns("/**");
     }
 }

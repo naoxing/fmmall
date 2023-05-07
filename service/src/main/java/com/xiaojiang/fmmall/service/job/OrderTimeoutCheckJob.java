@@ -29,9 +29,8 @@ public class OrderTimeoutCheckJob {
     private WXPay wxPay = new WXPay(new MyPayConfig());
 
 
-    @Scheduled(cron = "* 0/45 * * * ?") //从第0秒开始,每隔5秒调用一次
+    @Scheduled(cron = "* 0/5 * * * ?") //从第0秒开始,每隔5秒调用一次
     public void checkAndCloseOrder(){
-        System.out.println("-------------进来了");
         //1.查询超过30min未支付的订单
         Example example = new Example(Orders.class);
         Example.Criteria criteria = example.createCriteria();
@@ -46,7 +45,6 @@ public class OrderTimeoutCheckJob {
                 HashMap<String, String> params = new HashMap<>();
                 params.put("out_trade_no",order.getOrderId());
                 Map<String, String> resp = wxPay.orderQuery(params);
-                System.out.println(resp);
                 //{transaction_id=4200001821202304148159764097, nonce_str=NcyPPIBDFRDCtwjG, trade_state=SUCCESS, bank_type=OTHERS, openid=oUuptwlv5aA8t8PguQqr0sCdqM8I, sign=F628C5C84FE9751F0181742C885CDC91, return_msg=OK, fee_type=CNY, mch_id=1497984412, cash_fee=1, out_trade_no=81c50217fe9647d1b7de8fe451fcdba4, cash_fee_type=CNY, appid=wx632c8f211f8122c6, total_fee=1, trade_state_desc=支付成功, trade_type=NATIVE, result_code=SUCCESS, attach=, time_end=20230414223939, is_subscribe=N, return_code=SUCCESS}
                 if(resp.get("trade_state").equalsIgnoreCase("SUCCESS")){
                     //2.1 如果订单已支付,修改订单为 待发货/已支付 status="2"
