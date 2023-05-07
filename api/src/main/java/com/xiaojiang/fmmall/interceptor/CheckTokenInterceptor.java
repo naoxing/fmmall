@@ -8,6 +8,8 @@ import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jws;
 import io.jsonwebtoken.JwtParser;
 import io.jsonwebtoken.Jwts;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.HandlerInterceptor;
 
@@ -15,6 +17,7 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.io.PrintWriter;
+import java.util.concurrent.TimeUnit;
 
 /**
  * @Author xiaojiang
@@ -23,21 +26,33 @@ import java.io.PrintWriter;
  **/
 @Component
 public class CheckTokenInterceptor implements HandlerInterceptor {
+    @Autowired
+    private StringRedisTemplate stringRedisTemplate;
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception {
         String method = request.getMethod();
         //放行OPTIONS请求
-        if("OPTIONS".equalsIgnoreCase(method)){
+        if ("OPTIONS".equalsIgnoreCase(method)) {
             return true;
         }
 
         String token = request.getHeader("token");
-        if(token==null){
+        if (token == null) {
             //提示请先登录
             ResultVo resultVo = new ResultVo(ResStatus.LOGIN_FAIL_NOT, "请先登录!", null);
-            doRespose(response,resultVo);
-            return false;
-        }else{
+            doRespose(response, resultVo);
+        } else {
+            String tokenStr = stringRedisTemplate.boundValueOps(token).get();
+            if(tokenStr==null){ //token不存在或者过期
+                //提示请先登录
+                ResultVo resultVo = new ResultVo(ResStatus.LOGIN_FAIL_NOT, "请先登录!", null);
+                doRespose(response, resultVo);
+            }else {
+                //token存在,就续命30min
+                stringRedisTemplate.boundValueOps(token).expire(30, TimeUnit.MINUTES);
+                return true;
+            }
+/*  过去式写法
             //验证token
             JwtParser parser = Jwts.parser();
             parser.setSigningKey("jiangjiang520");  //解析token的SigningKey必须和生成的token的设置密码一致
@@ -51,13 +66,14 @@ public class CheckTokenInterceptor implements HandlerInterceptor {
                 ResultVo resultVo = new ResultVo(ResStatus.LOGIN_FAIL_OVERDUE, "登录过期,请重新登录", null);
                 doRespose(response,resultVo);
                 return false;
-            }
-        }
 
+            }*/
+        }
+        return false;
     }
 
     //JSON写到前端提示
-    private void doRespose(HttpServletResponse response,ResultVo resultVo) throws IOException {
+    private void doRespose(HttpServletResponse response, ResultVo resultVo) throws IOException {
         response.setContentType("application/json");
         response.setCharacterEncoding("utf-8");
         PrintWriter out = response.getWriter();
