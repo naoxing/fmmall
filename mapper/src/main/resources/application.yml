@@ -17,3 +17,9 @@ mybatis:
 logging:
   level:
     io.swagger.models.parameters.AbstractSerializableParameter: error
+redisson:
+  addr:
+    singleAddr:
+      host: redis://47.113.202.84:6379
+      password: Smbo1IhcaF9YEJvZ
+      database: 0

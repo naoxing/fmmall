@@ -35,7 +35,7 @@ public class OrderController {
      * 商户Key：sbNCm1JnevqI36LrEaxFwcaT0hkGxFnC
      */
     @PostMapping("/add")
-    //@ApiImplicitParam(dataType = "string",name = "cids",value = "购物车id字符串",required = true)
+    @ApiImplicitParam(dataType = "string",name = "cids",value = "购物车id字符串",required = true)
     public ResultVo listShoppingCart(String cids, @RequestBody Orders order){
         ResultVo resultVo = null;
         try {

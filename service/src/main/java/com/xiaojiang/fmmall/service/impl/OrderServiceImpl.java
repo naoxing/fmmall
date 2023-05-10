@@ -6,9 +6,12 @@ import com.xiaojiang.fmmall.service.OrderService;
 import com.xiaojiang.fmmall.utils.PageHelper;
 import com.xiaojiang.fmmall.vo.ResStatus;
 import com.xiaojiang.fmmall.vo.ResultVo;
+import org.redisson.api.RLock;
+import org.redisson.api.RedissonClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
@@ -16,6 +19,7 @@ import tk.mybatis.mapper.entity.Example;
 
 import java.math.BigDecimal;
 import java.util.*;
+import java.util.concurrent.TimeUnit;
 
 /**
  * @Author xiaojiang
@@ -32,9 +36,13 @@ public class OrderServiceImpl implements OrderService {
     private OrderItemMapper orderItemMapper;
     @Autowired
     private ProductSkuMapper productSkuMapper;
+    @Autowired
+    private StringRedisTemplate stringRedisTemplate;
+    @Autowired
+    private RedissonClient redissonClient;
 
     //日志管理
-    private Logger logger = LoggerFactory.getLogger(OrderServiceImpl.class);
+    private Logger logger = LoggerFactory.getLogger( OrderServiceImpl.class);
 
     /**
      * 保存订单业务
@@ -56,86 +64,118 @@ public class OrderServiceImpl implements OrderService {
                 throw new RuntimeException(e);
             }
         }
+        //通过选择的购物车id查询购物车记录
         List<ShoppingCartVO> list = shoppingCartMapper.selectShopcartByCids(cidsList);
 
         //2.获取所有商品名称,字符串拼接
+        boolean isLock = true;
         StringBuilder untitled = new StringBuilder();
+        String[] skuIds = new String[list.size()];  //{101,102,null,...}
+        Map<String,RLock> lockMap = new HashMap<>();
         for (int i = 0; i < list.size(); i++) {
+            //将商品id放入redis锁住,防止超卖
+            String skuId = list.get(i).getSkuId();
+            //构建当前商品的锁
+            RLock lock = redissonClient.getLock(skuId);
+            boolean b = false;
+            try {
+                b = lock.tryLock(10,3, TimeUnit.SECONDS);
+                if(b){
+                    lockMap.put(skuId,lock);
+                    skuIds[i] = skuId;
+                }
+            } catch (InterruptedException e) {
+                throw new RuntimeException(e);
+            }
+            isLock = isLock & b;
             if(i<list.size()-1){
                 untitled.append(list.get(i).getProductName()).append(",");
             }else {
                 untitled.append(list.get(i).getProductName());
             }
         }
-/*
-        for (ShoppingCartVO shoppingCartVO : list) {
-            untitled.append(shoppingCartVO.getProductName()).append(",");
-        }
-*/
-        //3.保存订单
-        //a.userId
-        //b.untitled √
-        //c.收货人信息:姓名,电话,地址
-        //d.总价格
-        //e.支付方式
-        //f.订单创建时间 √
-        //g.订单初始状态 √ (待支付:1)
-        order.setUntitled(untitled.toString());
-        order.setCreateTime(new Date());
-        order.setStatus("1");
-        //生成订单编号
-        String orderId = UUID.randomUUID().toString().replace("-", "");
-        order.setOrderId(orderId);
-        int result1 = ordersMapper.insert(order);
-        logger.info("订单添加完成...");
-
-
-        //4.生成订单快照
-        if (result1 > 0) {
-            for (ShoppingCartVO sc : list) {
-                int cnum = 0;
-                try {
-                    cnum = Integer.parseInt(sc.getCartNum());
-                } catch (NumberFormatException e) {
-                    throw new RuntimeException(e);
+        HashMap<String, String> map = null;
+        try {
+            if (isLock) {  //如果将需要操作的商品id成功锁住,就进行订单操作
+                boolean isFull = true;
+                //再次验证库存是否可行,防止其他并发线程已经修改过
+                list = shoppingCartMapper.selectShopcartByCids(cidsList);
+                for (int i = 0; i < list.size(); i++) {
+                    if(list.get(i).getSkuStock() < Integer.parseInt(list.get(i).getCartNum())){
+                        isFull=false;
+                    }
                 }
-                String itemId = System.currentTimeMillis() + "" + (new Random().nextInt(89999) + 10000);
-                OrderItem orderItem = new OrderItem(itemId, orderId, sc.getProductId(), sc.getProductName(), sc.getProductImg(), sc.getSkuId(), sc.getSkuName(),
-                        sc.getProductPrice(), cnum, new BigDecimal(sc.getSellPrice() * cnum), new Date(), new Date(), 0);
-                orderItemMapper.insert(orderItem);
-                logger.info("订单快照已经生成...");
-            }
-            //5.扣减库存
-            for (ShoppingCartVO sc : list) {
-                String skuId = sc.getSkuId();
-                int newStock = 0;
-                try {
-                    newStock = sc.getSkuStock() - Integer.parseInt(sc.getCartNum());
-                } catch (NumberFormatException e) {
-                    throw new RuntimeException(e);
+                if(isFull){
+                    //内存充足,进行订单等操作
+                    //3.保存订单
+                    //a.userId
+                    //b.untitled √
+                    //c.收货人信息:姓名,电话,地址
+                    //d.总价格
+                    //e.支付方式
+                    //f.订单创建时间 √
+                    //g.订单初始状态 √ (待支付:1)
+                    order.setUntitled(untitled.toString());
+                    order.setCreateTime(new Date());
+                    order.setStatus("1");
+                    //生成订单编号
+                    String orderId = UUID.randomUUID().toString().replace("-", "");
+                    order.setOrderId(orderId);
+                    int result1 = ordersMapper.insert(order);
+                    logger.info("订单添加完成...");
+                    //4.生成订单快照
+                    if (result1 > 0) {
+                        for (ShoppingCartVO sc : list) {
+                            int cnum = 0;
+                            cnum = Integer.parseInt(sc.getCartNum());
+                            String itemId = System.currentTimeMillis() + "" + (new Random().nextInt(89999) + 10000);
+                            OrderItem orderItem = new OrderItem(itemId, orderId, sc.getProductId(), sc.getProductName(), sc.getProductImg(), sc.getSkuId(), sc.getSkuName(),
+                                    sc.getProductPrice(), cnum, new BigDecimal(sc.getSellPrice() * cnum), new Date(), new Date(), 0);
+                            orderItemMapper.insert(orderItem);
+                            logger.info("订单快照已经生成...");
+                        }
+                        //5.扣减库存
+                        for (ShoppingCartVO sc : list) {
+                            String skuId = sc.getSkuId();
+                            int newStock = 0;
+                            try {
+                                newStock = sc.getSkuStock() - Integer.parseInt(sc.getCartNum());
+                            } catch (NumberFormatException e) {
+                                throw new RuntimeException(e);
+                            }
+                            Example example = new Example(ProductSku.class);
+                            Example.Criteria criteria = example.createCriteria();
+                            criteria.andEqualTo("skuId", skuId);
+                            ProductSku productSku = new ProductSku();
+                            productSku.setSkuId(skuId);
+                            productSku.setStock(newStock);
+                            productSkuMapper.updateByPrimaryKeySelective(productSku);
+                            logger.info("扣减{}库存{}完成",skuId,Integer.parseInt(sc.getCartNum()));
+                        }
+                        //6.删除购物车:当购物车中记录购买成功之后,购物车对应的数据作删除操作
+                        for (Integer cid : cidsList) {
+                            shoppingCartMapper.deleteByPrimaryKey(cid);
+                        }
+                        logger.info("删除购物车完成...");
+                        //返回信息需要请求微信平台
+                        map = new HashMap<>();
+                        map.put("orderId",orderId);
+                        map.put("untitled",untitled.toString());
+                    }
                 }
-                Example example = new Example(ProductSku.class);
-                Example.Criteria criteria = example.createCriteria();
-                criteria.andEqualTo("skuId", skuId);
-                ProductSku productSku = new ProductSku();
-                productSku.setSkuId(skuId);
-                productSku.setStock(newStock);
-                productSkuMapper.updateByPrimaryKeySelective(productSku);
-                logger.info("扣减{}库存{}完成",skuId,Integer.parseInt(sc.getCartNum()));
+             }
+        }catch (RuntimeException e) {
+            throw new RuntimeException(e);
+        } finally {
+            //如果锁没成功或者库存不足或者订单成功or失败-->锁全部释放
+            for (int j = 0; j < skuIds.length; j++) {
+                String skuId = skuIds[j];
+                if(skuId!=null && !"".equals(skuId)){
+                    lockMap.get(skuId).unlock();
+                }
             }
-            //6.删除购物车:当购物车中记录购买成功之后,购物车对应的数据作删除操作
-            for (Integer cid : cidsList) {
-                shoppingCartMapper.deleteByPrimaryKey(cid);
-            }
-            logger.info("删除购物车完成...");
-            //返回信息需要请求微信平台
-            HashMap<String, String> map = new HashMap<>();
-            map.put("orderId",orderId);
-            map.put("untitled",untitled.toString());
-            return map;
-        } else {
-            return null;
         }
+        return map;
     }
 
     @Override
