@@ -86,7 +86,6 @@
     limit #{start},#{limit}
   </select>
 
-
     <select id="selectProductByKeyword" resultMap="ProductVOMap2">
         select  product_id,
                 product_name,
@@ -100,6 +99,19 @@
         from product
         where product_name like #{kw}
         limit #{start},#{limit}
+    </select>
+
+    <select id="selectProducts" resultMap="ProductVOMap2">
+        select  product_id,
+                product_name,
+                category_id,
+                root_category_id,
+                sold_num,
+                product_status,
+                content,
+                create_time,
+                update_time
+        from product
     </select>
 
 
